@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MD Reader</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="toolbar">
+        <div class="brand">
+          <span class="brand-kicker">Markdown Workspace</span>
+          <h1>MD Reader</h1>
+        </div>
+        <div class="workspace-controls">
+          <form class="workspace-form" id="workspace-form">
+            <label class="sr-only" for="workspace-path">工作目录</label>
+            <input
+              id="workspace-path"
+              name="workspace-path"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="输入本机目录绝对路径，或点击右侧按钮选择文件夹"
+            />
+            <button class="secondary-button" id="workspace-picker" type="button">选择文件夹</button>
+            <button id="workspace-submit" type="submit">打开目录</button>
+          </form>
+          <p class="workspace-feedback" data-tone="neutral" id="workspace-feedback">可输入绝对路径，或直接打开系统文件夹选择器。</p>
+        </div>
+      </header>
+
+      <main class="workspace-layout">
+        <aside class="sidebar">
+          <div class="panel-header">
+            <span>目录树</span>
+            <small id="current-root"></small>
+          </div>
+          <div class="status" id="tree-status">正在加载工作目录…</div>
+          <div class="tree-root" id="tree-root" hidden></div>
+        </aside>
+
+        <section class="preview-panel">
+          <div class="panel-header">
+            <span id="preview-title">Markdown 预览</span>
+            <small id="preview-path"></small>
+          </div>
+          <div class="status" id="preview-status">从左侧选择一个 `.md` 文件开始预览。</div>
+          <article class="preview-content markdown-body" id="preview-content" hidden></article>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="/app.js"></script>
+  </body>
+  </html>
