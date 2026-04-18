@@ -15,6 +15,90 @@ const treeCache = new Map();
 const expandedPaths = new Set([""]);
 let activeFilePath = "";
 
+function createPluginHost() {
+  const previewRenderedHandlers = [];
+  const previewClearedHandlers = [];
+  const workspaceChangedHandlers = [];
+
+  return {
+    async load() {
+      const runtime = await fetchJson("/api/plugins/runtime");
+
+      for (const moduleDescriptor of runtime.modules) {
+        try {
+          const pluginModule = await import(moduleDescriptor.url);
+          const activate = typeof pluginModule.activate === "function" ? pluginModule.activate : pluginModule.default?.activate;
+          if (typeof activate !== "function") {
+            continue;
+          }
+
+          await activate({
+            plugin: moduleDescriptor,
+            onPreviewRendered(handler) {
+              if (typeof handler === "function") {
+                previewRenderedHandlers.push({
+                  pluginId: moduleDescriptor.id,
+                  handler,
+                });
+              }
+            },
+            onPreviewCleared(handler) {
+              if (typeof handler === "function") {
+                previewClearedHandlers.push({
+                  pluginId: moduleDescriptor.id,
+                  handler,
+                });
+              }
+            },
+            onWorkspaceChanged(handler) {
+              if (typeof handler === "function") {
+                workspaceChangedHandlers.push({
+                  pluginId: moduleDescriptor.id,
+                  handler,
+                });
+              }
+            },
+            getPreviewElement() {
+              return previewContentElement;
+            },
+          });
+        } catch (error) {
+          console.error(`Failed to load client plugin "${moduleDescriptor.id}"`, error);
+        }
+      }
+    },
+    async emitPreviewRendered(payload) {
+      for (const listener of previewRenderedHandlers) {
+        try {
+          await listener.handler(payload);
+        } catch (error) {
+          console.error(`Preview hook failed for plugin "${listener.pluginId}"`, error);
+        }
+      }
+    },
+    async emitPreviewCleared(payload) {
+      for (const listener of previewClearedHandlers) {
+        try {
+          await listener.handler(payload);
+        } catch (error) {
+          console.error(`Preview clear hook failed for plugin "${listener.pluginId}"`, error);
+        }
+      }
+    },
+    async emitWorkspaceChanged(payload) {
+      for (const listener of workspaceChangedHandlers) {
+        try {
+          await listener.handler(payload);
+        } catch (error) {
+          console.error(`Workspace hook failed for plugin "${listener.pluginId}"`, error);
+        }
+      }
+    },
+  };
+}
+
+const pluginHost = createPluginHost();
+
 function setWorkspaceFeedback(message, tone = "neutral") {
   workspaceFeedbackElement.dataset.tone = tone;
   workspaceFeedbackElement.textContent = message;
@@ -74,10 +158,10 @@ async function loadWorkspace(rootPath) {
       })
     : await fetchJson("/api/workspace");
 
-  applyWorkspacePayload(payload);
+  await applyWorkspacePayload(payload);
 }
 
-function applyWorkspacePayload(payload) {
+async function applyWorkspacePayload(payload) {
   treeCache.clear();
   treeCache.set("", payload.items);
   expandedPaths.clear();
@@ -89,8 +173,14 @@ function applyWorkspacePayload(payload) {
   previewTitleElement.textContent = "Markdown 预览";
   previewPathElement.textContent = "";
   setPreviewStatus("从左侧选择一个 `.md` 文件开始预览。");
+  await pluginHost.emitPreviewCleared({
+    reason: "workspace-change",
+  });
 
   renderTree();
+  await pluginHost.emitWorkspaceChanged({
+    rootPath: payload.rootPath,
+  });
 }
 
 async function chooseWorkspaceFromSystem() {
@@ -108,7 +198,7 @@ async function chooseWorkspaceFromSystem() {
       return;
     }
 
-    applyWorkspacePayload(payload);
+    await applyWorkspacePayload(payload);
     setWorkspaceFeedback("已通过系统文件夹选择器切换工作目录。", "success");
   } catch (error) {
     setWorkspaceFeedback(error.message, "error");
@@ -139,8 +229,19 @@ async function openMarkdownFile(path) {
     previewTitleElement.textContent = payload.name;
     previewPathElement.textContent = payload.path;
     showPreview(payload.html);
+    await pluginHost.emitPreviewRendered({
+      filePath: payload.path,
+      title: payload.name,
+      rootPath: currentRootElement.textContent,
+      previewElement: previewContentElement,
+      pluginMeta: payload.pluginMeta || {},
+    });
   } catch (error) {
     setPreviewStatus(error.message);
+    await pluginHost.emitPreviewCleared({
+      reason: "preview-error",
+      error: error.message,
+    });
   }
 }
 
@@ -288,6 +389,13 @@ async function initializeApp() {
   setTreeStatus("正在加载工作目录…");
   setWorkspaceFeedback("可输入绝对路径，或直接打开系统文件夹选择器。");
   setPreviewStatus("从左侧选择一个 `.md` 文件开始预览。");
+
+  try {
+    await pluginHost.load();
+  } catch (error) {
+    console.error("Failed to bootstrap client plugins", error);
+    setWorkspaceFeedback("插件运行时加载失败，阅读器仍可正常使用。", "error");
+  }
 
   try {
     await loadWorkspace();

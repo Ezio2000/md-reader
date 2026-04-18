@@ -59,7 +59,9 @@ async function main() {
   await mkdir(distDir, { recursive: true });
 
   console.log("Copying runtime files...");
+  await cp(path.join(rootDir, "lib"), path.join(distDir, "lib"), { recursive: true });
   await cp(path.join(rootDir, "server.js"), path.join(distDir, "server.js"));
+  await cp(path.join(rootDir, "plugins"), path.join(distDir, "plugins"), { recursive: true });
   await cp(path.join(rootDir, "public"), path.join(distDir, "public"), { recursive: true });
   await cp(path.join(rootDir, "demo"), path.join(distDir, "demo"), { recursive: true });
   await cp(path.join(rootDir, "package-lock.json"), path.join(distDir, "package-lock.json"));

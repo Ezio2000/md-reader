@@ -3,10 +3,16 @@ const { spawn } = require("child_process");
 const fs = require("fs/promises");
 const path = require("path");
 const { marked } = require("marked");
+const PluginManager = require("./lib/plugin-manager");
 
 const HOST = "127.0.0.1";
 const PORT = Number(process.env.PORT || 3000);
-const PUBLIC_DIR = path.join(__dirname, "public");
+const ROOT_DIRECTORY = __dirname;
+const PUBLIC_DIR = path.join(ROOT_DIRECTORY, "public");
+const pluginManager = new PluginManager({
+  rootDirectory: ROOT_DIRECTORY,
+  logger: console,
+});
 
 let workspaceRoot = "";
 let workspaceRootRealPath = "";
@@ -193,18 +199,31 @@ function sendText(response, statusCode, body, contentType = "text/plain; charset
 
 function getContentType(filePath) {
   const extension = path.extname(filePath).toLowerCase();
+
   if (extension === ".css") {
     return "text/css; charset=utf-8";
   }
-  if (extension === ".js") {
+
+  if (extension === ".js" || extension === ".mjs") {
     return "application/javascript; charset=utf-8";
   }
+
   if (extension === ".html") {
     return "text/html; charset=utf-8";
   }
+
   if (extension === ".json") {
     return "application/json; charset=utf-8";
   }
+
+  if (extension === ".svg") {
+    return "image/svg+xml";
+  }
+
+  if (extension === ".png") {
+    return "image/png";
+  }
+
   return "application/octet-stream";
 }
 
@@ -301,10 +320,15 @@ async function listWorkspaceChildren(relativePath = "", workspace = getWorkspace
     if (left.type !== right.type) {
       return left.type === "directory" ? -1 : 1;
     }
+
     return left.name.localeCompare(right.name, "zh-Hans-CN", { numeric: true, sensitivity: "base" });
   });
 
-  return normalizedEntries;
+  return pluginManager.applyTreeTransformers({
+    items: normalizedEntries,
+    relativePath,
+    workspaceRoot: workspace.rootPath,
+  });
 }
 
 async function readMarkdownFile(relativePath) {
@@ -322,25 +346,25 @@ async function readMarkdownFile(relativePath) {
 
   const raw = await fs.readFile(filePath, "utf8");
   const html = marked.parse(raw);
+  const transformed = await pluginManager.applyMarkdownTransformers({
+    raw,
+    html,
+    relativePath,
+    absolutePath: filePath,
+    workspaceRoot: workspace.rootPath,
+    meta: {},
+  });
 
   return {
     name: path.basename(filePath),
     path: path.relative(workspace.realPath, filePath).split(path.sep).join("/"),
-    raw,
-    html,
+    raw: transformed.raw,
+    html: transformed.html,
+    pluginMeta: transformed.meta,
   };
 }
 
-async function serveStaticFile(requestPath, response) {
-  const safePath = requestPath === "/" ? "/index.html" : requestPath;
-  const filePath = path.resolve(PUBLIC_DIR, `.${safePath}`);
-  const publicPrefix = `${PUBLIC_DIR}${path.sep}`;
-
-  if (filePath !== PUBLIC_DIR && !filePath.startsWith(publicPrefix)) {
-    sendText(response, 403, "Forbidden");
-    return;
-  }
-
+async function serveFile(response, filePath) {
   try {
     const content = await fs.readFile(filePath);
     response.writeHead(200, {
@@ -355,8 +379,37 @@ async function serveStaticFile(requestPath, response) {
       return;
     }
 
-    sendText(response, 500, "Failed to read static file.");
+    sendText(response, 500, "Failed to read file.");
   }
+}
+
+async function serveStaticFile(requestPath, response) {
+  const safePath = requestPath === "/" ? "/index.html" : requestPath;
+  const filePath = path.resolve(PUBLIC_DIR, `.${safePath}`);
+  const publicPrefix = `${PUBLIC_DIR}${path.sep}`;
+
+  if (filePath !== PUBLIC_DIR && !filePath.startsWith(publicPrefix)) {
+    sendText(response, 403, "Forbidden");
+    return;
+  }
+
+  await serveFile(response, filePath);
+}
+
+async function servePluginAsset(requestPath, response) {
+  const prefix = "/plugin-assets/";
+  const assetPath = requestPath.slice(prefix.length);
+  const [encodedPluginId, ...encodedSegments] = assetPath.split("/").filter(Boolean);
+
+  if (!encodedPluginId || encodedSegments.length === 0) {
+    sendText(response, 404, "Plugin asset not found");
+    return;
+  }
+
+  const pluginId = decodeURIComponent(encodedPluginId);
+  const relativeAssetPath = encodedSegments.map((segment) => decodeURIComponent(segment)).join("/");
+  const filePath = pluginManager.resolvePluginAsset(pluginId, relativeAssetPath);
+  await serveFile(response, filePath);
 }
 
 async function parseJsonBody(request) {
@@ -435,6 +488,39 @@ async function handleApiRequest(request, response, url) {
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/api/plugins") {
+      sendJson(response, 200, pluginManager.getManagementPayload());
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/plugins/runtime") {
+      sendJson(response, 200, pluginManager.getClientRuntimePayload());
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/plugins/reload") {
+      sendJson(response, 200, await pluginManager.reload());
+      return;
+    }
+
+    const pluginStateMatch = url.pathname.match(/^\/api\/plugins\/([^/]+)\/state$/);
+    if (request.method === "POST" && pluginStateMatch) {
+      const pluginId = decodeURIComponent(pluginStateMatch[1]);
+      const body = await parseJsonBody(request);
+
+      if (typeof body.enabled !== "boolean") {
+        sendJson(response, 400, { error: "Plugin state payload must contain a boolean \"enabled\" field." });
+        return;
+      }
+
+      const plugin = await pluginManager.setPluginEnabled(pluginId, body.enabled);
+      sendJson(response, 200, {
+        plugin,
+        runtime: pluginManager.getClientRuntimePayload(),
+      });
+      return;
+    }
+
     sendJson(response, 404, { error: "API endpoint not found." });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected server error.";
@@ -444,16 +530,27 @@ async function handleApiRequest(request, response, url) {
 
 async function bootstrap() {
   await initializeWorkspaceRoot(process.cwd());
+  await pluginManager.initialize();
 
   const server = http.createServer(async (request, response) => {
-    const url = new URL(request.url || "/", `http://${request.headers.host || `${HOST}:${PORT}`}`);
+    try {
+      const url = new URL(request.url || "/", `http://${request.headers.host || `${HOST}:${PORT}`}`);
 
-    if (url.pathname.startsWith("/api/")) {
-      await handleApiRequest(request, response, url);
-      return;
+      if (url.pathname.startsWith("/api/")) {
+        await handleApiRequest(request, response, url);
+        return;
+      }
+
+      if (url.pathname.startsWith("/plugin-assets/")) {
+        await servePluginAsset(url.pathname, response);
+        return;
+      }
+
+      await serveStaticFile(url.pathname, response);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unexpected server error.";
+      sendText(response, 400, message);
     }
-
-    await serveStaticFile(url.pathname, response);
   });
 
   server.listen(PORT, HOST, () => {

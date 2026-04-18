@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MD Reader Plugins</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="toolbar">
+        <div class="toolbar-leading">
+          <div class="brand">
+            <span class="brand-kicker">Markdown Workspace</span>
+            <h1>MD Reader</h1>
+          </div>
+          <nav class="top-nav" aria-label="Primary">
+            <a class="nav-link" href="/">阅读器</a>
+            <a class="nav-link is-active" href="/plugins.html">插件管理</a>
+          </nav>
+        </div>
+        <div class="toolbar-actions">
+          <button class="toolbar-button secondary-button" id="plugins-reload" type="button">重新扫描插件</button>
+        </div>
+      </header>
+
+      <main class="plugin-page">
+        <section class="plugin-hero card-surface">
+          <div>
+            <span class="brand-kicker">Plugin Host</span>
+            <h2>插件管理页面</h2>
+            <p class="page-copy">
+              把插件放到下方目录中，宿主会扫描 `plugin.json`、加载可用的服务端入口与客户端入口，并在这里统一管理启停状态。
+            </p>
+          </div>
+          <div class="plugin-meta-grid">
+            <div class="plugin-meta-item">
+              <span class="meta-label">插件目录</span>
+              <code id="plugins-directory">加载中…</code>
+            </div>
+            <div class="plugin-meta-item">
+              <span class="meta-label">状态文件</span>
+              <code id="plugins-state-file">加载中…</code>
+            </div>
+            <div class="plugin-meta-item">
+              <span class="meta-label">已发现插件</span>
+              <strong id="plugins-count">0</strong>
+            </div>
+          </div>
+          <p class="workspace-feedback" data-tone="neutral" id="plugins-feedback">正在加载插件列表…</p>
+        </section>
+
+        <section class="plugin-list-panel card-surface">
+          <div class="panel-header">
+            <span>已安装插件</span>
+            <small>启用或禁用后，刷新阅读器页即可应用最新客户端插件。</small>
+          </div>
+          <div class="plugin-empty" id="plugins-empty" hidden>
+            <p>当前还没有发现任何插件。</p>
+            <p>每个插件都需要独立目录，且目录内至少包含一个 `plugin.json`。</p>
+          </div>
+          <div class="plugin-list" id="plugins-list"></div>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="/plugins.js"></script>
+  </body>
+  </html>

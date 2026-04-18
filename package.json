@@ -5,8 +5,9 @@
   "main": "server.js",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "check": "node --check server.js && node --check public/app.js",
-    "start": "node server.js"
+    "check": "node --check server.js && node --check lib/plugin-manager.js && node --check public/app.js && node --check public/plugins.js && node --check scripts/test-plugin-system.mjs",
+    "start": "node server.js",
+    "test": "node scripts/test-plugin-system.mjs"
   },
   "keywords": [],
   "author": "",
