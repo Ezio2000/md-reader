@@ -63,7 +63,6 @@ async function main() {
   await cp(path.join(rootDir, "server.js"), path.join(distDir, "server.js"));
   await cp(path.join(rootDir, "plugins"), path.join(distDir, "plugins"), { recursive: true });
   await cp(path.join(rootDir, "public"), path.join(distDir, "public"), { recursive: true });
-  await cp(path.join(rootDir, "demo"), path.join(distDir, "demo"), { recursive: true });
   await cp(path.join(rootDir, "package-lock.json"), path.join(distDir, "package-lock.json"));
   await cp(path.join(rootDir, "README.md"), path.join(distDir, "README.md"));
   await createDistPackageJson();
