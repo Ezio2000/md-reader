@@ -208,10 +208,6 @@ async function chooseWorkspaceFromSystem() {
 }
 
 async function loadChildren(path) {
-  if (treeCache.has(path)) {
-    return treeCache.get(path);
-  }
-
   const payload = await fetchJson(`/api/tree?path=${encodeURIComponent(path)}`);
   treeCache.set(path, payload.items);
   return payload.items;
@@ -288,6 +284,7 @@ function createTreeItem(item) {
       const isExpanded = expandedPaths.has(item.path);
       if (isExpanded) {
         expandedPaths.delete(item.path);
+        treeCache.delete(item.path);
         renderTree();
         return;
       }
@@ -295,9 +292,7 @@ function createTreeItem(item) {
       expandedPaths.add(item.path);
       renderTree();
 
-      if (!treeCache.has(item.path)) {
-        childrenContainer.innerHTML = '<div class="tree-placeholder">正在加载…</div>';
-      }
+      childrenContainer.innerHTML = '<div class="tree-placeholder">正在加载…</div>';
 
       try {
         await loadChildren(item.path);
