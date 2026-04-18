@@ -1,0 +1,10 @@
+{
+  "id": "echarts",
+  "name": "ECharts Renderer",
+  "version": "0.1.0",
+  "description": "Render fenced echarts code blocks directly in the Markdown preview.",
+  "enabled": true,
+  "serverEntry": "server.js",
+  "clientEntry": "client.mjs",
+  "permissions": ["markdown:transform", "ui:preview"]
+}

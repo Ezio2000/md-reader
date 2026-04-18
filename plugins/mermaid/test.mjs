@@ -15,6 +15,9 @@ function assert(condition, message) {
 class FakeDocument {
   constructor() {
     this.nodesById = new Map();
+    this.fonts = {
+      ready: Promise.resolve(),
+    };
     this.head = {
       append: (node) => {
         this.nodesById.set(node.id, node);
@@ -116,10 +119,12 @@ async function testClientPlugin() {
   };
 
   let initializeCalls = 0;
+  let initializeOptions;
   let registeredPreviewHandler;
   const fakeMermaidLoader = async () => ({
-    initialize() {
+    initialize(options) {
       initializeCalls += 1;
+      initializeOptions = options;
     },
     async render(id, source) {
       return {
@@ -147,6 +152,9 @@ async function testClientPlugin() {
   });
 
   assert(initializeCalls === 1, "Expected Mermaid runtime to initialize exactly once.");
+  assert(initializeOptions?.htmlLabels === false, "Expected Mermaid to disable HTML labels globally.");
+  assert(initializeOptions?.flowchart?.htmlLabels === false, "Expected Mermaid flowcharts to disable HTML labels.");
+  assert(initializeOptions?.flowchart?.useMaxWidth === true, "Expected Mermaid flowcharts to respect container width.");
   assert(fakeBlock.dataset.mermaidState === "rendered", "Expected block state to be updated after rendering.");
   assert(fakeBlock.renderTarget.innerHTML.includes("<svg"), "Expected block to render SVG output.");
   assert(fakeBlock.fallback.hidden === true, "Expected mermaid fallback to be hidden after rendering.");

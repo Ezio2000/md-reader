@@ -1,4 +1,14 @@
 const STYLE_ELEMENT_ID = "md-reader-mermaid-plugin-style";
+const MERMAID_INIT_OPTIONS = {
+  startOnLoad: false,
+  securityLevel: "loose",
+  theme: "default",
+  htmlLabels: false,
+  flowchart: {
+    htmlLabels: false,
+    useMaxWidth: true,
+  },
+};
 let mermaidModulePromise;
 let mermaidInitialized = false;
 let renderSequence = 0;
@@ -94,15 +104,36 @@ async function getMermaidApi(loadMermaid = loadMermaidModule) {
   const mermaid = await loadMermaid();
 
   if (!mermaidInitialized) {
-    mermaid.initialize({
-      startOnLoad: false,
-      securityLevel: "loose",
-      theme: "default",
-    });
+    mermaid.initialize(MERMAID_INIT_OPTIONS);
     mermaidInitialized = true;
   }
 
   return mermaid;
+}
+
+function waitForAnimationFrame() {
+  if (typeof globalThis.requestAnimationFrame === "function") {
+    return new Promise((resolve) => {
+      globalThis.requestAnimationFrame(() => resolve());
+    });
+  }
+
+  return new Promise((resolve) => {
+    globalThis.setTimeout(resolve, 16);
+  });
+}
+
+async function waitForFonts(doc = globalThis.document) {
+  const fontSet = doc?.fonts;
+  if (!fontSet?.ready || typeof fontSet.ready.then !== "function") {
+    return;
+  }
+
+  try {
+    await fontSet.ready;
+  } catch {
+    // Ignore font loading failures and continue with rendering.
+  }
 }
 
 function resolveRenderResult(result) {
@@ -170,7 +201,10 @@ export async function renderMermaidBlocks({ previewElement, loadMermaid = loadMe
     };
   }
 
-  ensureMermaidStyles(previewElement?.ownerDocument ?? globalThis.document);
+  const documentRef = previewElement?.ownerDocument ?? globalThis.document;
+  ensureMermaidStyles(documentRef);
+  await waitForFonts(documentRef);
+  await waitForAnimationFrame();
   const mermaid = await getMermaidApi(loadMermaid);
 
   let renderedCount = 0;
@@ -198,3 +232,4 @@ export function createActivate(loadMermaid = loadMermaidModule) {
 }
 
 export const activate = createActivate();
+export { MERMAID_INIT_OPTIONS, waitForAnimationFrame, waitForFonts };
