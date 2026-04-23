@@ -48,8 +48,11 @@
         </aside>
 
         <section class="preview-panel">
-          <div class="panel-header">
-            <span id="preview-title">Markdown 预览</span>
+          <div class="panel-header panel-header-preview">
+            <div class="panel-header-main">
+              <span id="preview-title">Markdown 预览</span>
+              <button class="toolbar-button summary-button" id="summary-button" type="button" disabled>AI 总结</button>
+            </div>
             <small id="preview-path"></small>
           </div>
           <div class="status" id="preview-status">从左侧选择一个 `.md` 文件开始预览。</div>
@@ -57,6 +60,20 @@
         </section>
       </main>
     </div>
+
+    <div class="summary-modal" id="summary-modal" hidden>
+      <div class="summary-dialog" role="dialog" aria-modal="true" aria-labelledby="summary-title">
+        <div class="summary-dialog-header">
+          <div>
+            <span class="summary-kicker">AI Summary</span>
+            <h2 id="summary-title">文档摘要</h2>
+          </div>
+          <button class="toolbar-button" id="summary-close" type="button">关闭</button>
+        </div>
+        <p class="summary-meta" id="summary-meta">选择一个 Markdown 文件后可生成摘要。</p>
+        <div class="summary-body" id="summary-body">点击“AI 总结”后将在这里显示摘要。</div>
+      </div>
+    </div>
     <script type="module" src="/app.js"></script>
   </body>
-  </html>
+</html>

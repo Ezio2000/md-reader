@@ -9,10 +9,21 @@
 - 目录树按点击时再请求子节点，避免一次性展开整个目录
 - 树中只显示目录和 `.md` 文件
 - 点击 `.md` 文件后在右侧实时渲染
+- 支持点击 `AI 总结`，调用外部 Anthropic 风格网关生成摘要弹窗
 - 提供插件宿主骨架、插件管理页面和启停管理
 - 默认启动时工作目录为当前项目目录
 
 ## 运行
+
+如果要启用 `AI 总结`，需要显式提供外部摘要服务地址：
+
+```bash
+export MD_READER_AI_SUMMARY_BASE_URL="https://your-lpassport.example.com/anthropic"
+export MD_READER_AI_SUMMARY_UPSTREAM_ID="kimi"
+export MD_READER_AI_SUMMARY_MODEL="kimi-for-coding"
+```
+
+然后启动：
 
 ```bash
 npm install
@@ -24,6 +35,44 @@ npm start
 ```text
 http://127.0.0.1:3000
 ```
+
+如果不配置 `MD_READER_AI_SUMMARY_BASE_URL`，阅读器本身仍可正常使用，但点击 `AI 总结` 时会提示配置缺失。
+
+## AI 总结配置
+
+`AI 总结` 功能通过服务端调用一个兼容 Anthropic `/v1/messages` 协议的网关。
+
+必填环境变量：
+
+- `MD_READER_AI_SUMMARY_BASE_URL`
+  例如 `https://your-lpassport.example.com/anthropic`
+
+可选环境变量：
+
+- `MD_READER_AI_SUMMARY_UPSTREAM_ID`
+  默认值：`kimi`
+- `MD_READER_AI_SUMMARY_MODEL`
+  默认值：`kimi-for-coding`
+- `MD_READER_AI_SUMMARY_MAX_CHARS`
+  单次送审的正文最大字符数，默认 `40000`
+- `MD_READER_AI_SUMMARY_TIMEOUT_MS`
+  单次摘要请求超时，默认 `60000`
+
+示例：
+
+```bash
+MD_READER_AI_SUMMARY_BASE_URL="https://your-lpassport.example.com/anthropic" \
+MD_READER_AI_SUMMARY_UPSTREAM_ID="kimi" \
+MD_READER_AI_SUMMARY_MODEL="kimi-for-coding" \
+npm start
+```
+
+当前行为：
+
+- 只有点击 `AI 总结` 按钮时才会发起请求
+- 摘要结果显示在弹窗中
+- 弹窗只有点击“关闭”按钮才会关闭
+- Markdown 原文会由服务端发送到你配置的摘要网关
 
 ## 构建
 

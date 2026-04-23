@@ -9,6 +9,11 @@ const HOST = "127.0.0.1";
 const PORT = Number(process.env.PORT || 3000);
 const ROOT_DIRECTORY = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIRECTORY, "public");
+const AI_SUMMARY_BASE_URL = String(process.env.MD_READER_AI_SUMMARY_BASE_URL || "").trim().replace(/\/+$/, "");
+const AI_SUMMARY_UPSTREAM_ID = (process.env.MD_READER_AI_SUMMARY_UPSTREAM_ID || "kimi").trim() || "kimi";
+const AI_SUMMARY_MODEL = (process.env.MD_READER_AI_SUMMARY_MODEL || "kimi-for-coding").trim() || "kimi-for-coding";
+const AI_SUMMARY_MAX_CHARS = Math.max(4000, Number(process.env.MD_READER_AI_SUMMARY_MAX_CHARS || 40000));
+const AI_SUMMARY_TIMEOUT_MS = Math.max(5000, Number(process.env.MD_READER_AI_SUMMARY_TIMEOUT_MS || 60000));
 const pluginManager = new PluginManager({
   rootDirectory: ROOT_DIRECTORY,
   logger: console,
@@ -364,6 +369,115 @@ async function readMarkdownFile(relativePath) {
   };
 }
 
+async function readMarkdownSource(relativePath) {
+  const workspace = getWorkspaceSnapshot();
+  const filePath = await resolveWorkspaceEntry(relativePath, workspace);
+  const stats = await fs.stat(filePath);
+
+  if (!stats.isFile()) {
+    throw new Error("Target path is not a file.");
+  }
+
+  if (path.extname(filePath).toLowerCase() !== ".md") {
+    throw new Error("Only .md files can be summarized.");
+  }
+
+  const raw = await fs.readFile(filePath, "utf8");
+  return {
+    name: path.basename(filePath),
+    path: path.relative(workspace.realPath, filePath).split(path.sep).join("/"),
+    raw,
+  };
+}
+
+function clipTextByChars(value, maxChars) {
+  if (value.length <= maxChars) {
+    return {
+      text: value,
+      truncated: false,
+    };
+  }
+
+  return {
+    text: value.slice(0, maxChars),
+    truncated: true,
+  };
+}
+
+function extractAnthropicTextContent(payload) {
+  const content = Array.isArray(payload?.content) ? payload.content : [];
+  const parts = [];
+
+  for (const item of content) {
+    if (item?.type === "text" && typeof item.text === "string" && item.text.trim()) {
+      parts.push(item.text.trim());
+    }
+  }
+
+  return parts.join("\n\n").trim();
+}
+
+async function generateAiSummary(relativePath) {
+  const markdown = await readMarkdownSource(relativePath);
+  const clipped = clipTextByChars(markdown.raw, AI_SUMMARY_MAX_CHARS);
+  const prompt = [
+    "请用中文为下面的 Markdown 文档生成简洁摘要。",
+    "输出格式要求：",
+    "1. 先给一段一句话总览。",
+    "2. 再给 3 到 6 条要点。",
+    "3. 如果文中包含风险、待办或结论，单独补一段。",
+    "4. 不要编造原文没有的信息。",
+    "",
+    `文件名：${markdown.name}`,
+    clipped.truncated ? `提示：正文过长，以下内容已截断到前 ${AI_SUMMARY_MAX_CHARS} 个字符。` : "提示：以下是完整正文。",
+    "",
+    markdown.raw.length ? clipped.text : "(空文档)",
+  ].join("\n");
+
+  if (!AI_SUMMARY_BASE_URL) {
+    throw new Error("MD_READER_AI_SUMMARY_BASE_URL is required.");
+  }
+
+  const response = await fetch(`${AI_SUMMARY_BASE_URL}/v1/messages`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Upstream-Id": AI_SUMMARY_UPSTREAM_ID,
+    },
+    body: JSON.stringify({
+      model: AI_SUMMARY_MODEL,
+      max_tokens: 800,
+      messages: [
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+    }),
+    signal: AbortSignal.timeout(AI_SUMMARY_TIMEOUT_MS),
+  });
+
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const message = payload?.error || payload?.message || `Summary request failed with status ${response.status}.`;
+    throw new Error(message);
+  }
+
+  const summary = extractAnthropicTextContent(payload);
+  if (!summary) {
+    throw new Error("AI summary returned no text.");
+  }
+
+  return {
+    path: markdown.path,
+    name: markdown.name,
+    summary,
+    model: payload?.model || AI_SUMMARY_MODEL,
+    truncated: clipped.truncated,
+  };
+}
+
 async function serveFile(response, filePath) {
   try {
     const content = await fs.readFile(filePath);
@@ -485,6 +599,19 @@ async function handleApiRequest(request, response, url) {
       }
 
       sendJson(response, 200, await readMarkdownFile(relativePath));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/ai-summary") {
+      const body = await parseJsonBody(request);
+      const relativePath = String(body.path || "").trim();
+
+      if (!relativePath) {
+        sendJson(response, 400, { error: "Markdown path is required." });
+        return;
+      }
+
+      sendJson(response, 200, await generateAiSummary(relativePath));
       return;
     }
 

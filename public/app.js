@@ -10,10 +10,17 @@ const previewTitleElement = document.querySelector("#preview-title");
 const previewPathElement = document.querySelector("#preview-path");
 const previewStatusElement = document.querySelector("#preview-status");
 const previewContentElement = document.querySelector("#preview-content");
+const summaryButtonElement = document.querySelector("#summary-button");
+const summaryModalElement = document.querySelector("#summary-modal");
+const summaryCloseButtonElement = document.querySelector("#summary-close");
+const summaryMetaElement = document.querySelector("#summary-meta");
+const summaryBodyElement = document.querySelector("#summary-body");
 
 const treeCache = new Map();
 const expandedPaths = new Set([""]);
 let activeFilePath = "";
+let activeFileName = "";
+let summaryRequestToken = 0;
 
 function createPluginHost() {
   const previewRenderedHandlers = [];
@@ -133,6 +140,70 @@ function showPreview(html) {
   previewContentElement.innerHTML = html;
 }
 
+function updateSummaryButtonState() {
+  summaryButtonElement.disabled = !activeFilePath;
+}
+
+function setSummaryButtonLoading(isLoading) {
+  summaryButtonElement.disabled = isLoading || !activeFilePath;
+  summaryButtonElement.textContent = isLoading ? "生成中…" : "AI 总结";
+}
+
+function openSummaryModal() {
+  summaryModalElement.hidden = false;
+}
+
+function closeSummaryModal() {
+  summaryModalElement.hidden = true;
+}
+
+function setSummaryModalState(meta, body, tone = "neutral") {
+  summaryMetaElement.dataset.tone = tone;
+  summaryMetaElement.textContent = meta;
+  summaryBodyElement.textContent = body;
+}
+
+async function requestAiSummary() {
+  if (!activeFilePath) {
+    return;
+  }
+
+  const requestToken = ++summaryRequestToken;
+  setSummaryButtonLoading(true);
+  openSummaryModal();
+  setSummaryModalState(`正在为 ${activeFileName || activeFilePath} 生成摘要…`, "请稍候，正在调用 AI。");
+
+  try {
+    const payload = await fetchJson("/api/ai-summary", {
+      method: "POST",
+      body: JSON.stringify({
+        path: activeFilePath,
+      }),
+    });
+
+    if (requestToken !== summaryRequestToken) {
+      return;
+    }
+
+    const metaParts = [`文件：${payload.name}`, `模型：${payload.model}`];
+    if (payload.truncated) {
+      metaParts.push("正文已截断");
+    }
+
+    setSummaryModalState(metaParts.join(" · "), payload.summary, "success");
+  } catch (error) {
+    if (requestToken !== summaryRequestToken) {
+      return;
+    }
+
+    setSummaryModalState("AI 总结生成失败", error.message, "error");
+  } finally {
+    if (requestToken === summaryRequestToken) {
+      setSummaryButtonLoading(false);
+    }
+  }
+}
+
 async function fetchJson(url, options = {}) {
   const response = await fetch(url, {
     headers: {
@@ -167,12 +238,17 @@ async function applyWorkspacePayload(payload) {
   expandedPaths.clear();
   expandedPaths.add("");
   activeFilePath = "";
+  activeFileName = "";
+  summaryRequestToken += 1;
 
   workspacePathInput.value = payload.rootPath;
   currentRootElement.textContent = payload.rootPath;
   previewTitleElement.textContent = "Markdown 预览";
   previewPathElement.textContent = "";
   setPreviewStatus("从左侧选择一个 `.md` 文件开始预览。");
+  updateSummaryButtonState();
+  closeSummaryModal();
+  setSummaryModalState("选择一个 Markdown 文件后可生成摘要。", "点击“AI 总结”后将在这里显示摘要。");
   await pluginHost.emitPreviewCleared({
     reason: "workspace-change",
   });
@@ -215,13 +291,16 @@ async function loadChildren(path) {
 
 async function openMarkdownFile(path) {
   activeFilePath = path;
+  activeFileName = path.split("/").pop() || path;
   previewTitleElement.textContent = "正在加载…";
   previewPathElement.textContent = path;
   setPreviewStatus("正在读取 Markdown 文件…");
+  updateSummaryButtonState();
   renderTree();
 
   try {
     const payload = await fetchJson(`/api/file?path=${encodeURIComponent(path)}`);
+    activeFileName = payload.name;
     previewTitleElement.textContent = payload.name;
     previewPathElement.textContent = payload.path;
     showPreview(payload.html);
@@ -234,6 +313,9 @@ async function openMarkdownFile(path) {
     });
   } catch (error) {
     setPreviewStatus(error.message);
+    activeFilePath = "";
+    activeFileName = "";
+    updateSummaryButtonState();
     await pluginHost.emitPreviewCleared({
       reason: "preview-error",
       error: error.message,
@@ -380,10 +462,21 @@ workspacePickerButton.addEventListener("click", () => {
   void chooseWorkspaceFromSystem();
 });
 
+summaryButtonElement.addEventListener("click", () => {
+  void requestAiSummary();
+});
+
+summaryCloseButtonElement.addEventListener("click", () => {
+  closeSummaryModal();
+});
+
 async function initializeApp() {
   setTreeStatus("正在加载工作目录…");
   setWorkspaceFeedback("可输入绝对路径，或直接打开系统文件夹选择器。");
   setPreviewStatus("从左侧选择一个 `.md` 文件开始预览。");
+  updateSummaryButtonState();
+  closeSummaryModal();
+  setSummaryModalState("选择一个 Markdown 文件后可生成摘要。", "点击“AI 总结”后将在这里显示摘要。");
 
   try {
     await pluginHost.load();
