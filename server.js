@@ -10,6 +10,9 @@ const PORT = Number(process.env.PORT || 3000);
 const ROOT_DIRECTORY = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIRECTORY, "public");
 const AI_SUMMARY_BASE_URL = String(process.env.MD_READER_AI_SUMMARY_BASE_URL || "").trim().replace(/\/+$/, "");
+const AI_SUMMARY_API_KEY = String(
+  process.env.MD_READER_AI_SUMMARY_API_KEY || process.env.DEEPSEEK_API_KEY || process.env.ANTHROPIC_API_KEY || "",
+).trim();
 const AI_SUMMARY_UPSTREAM_ID = (process.env.MD_READER_AI_SUMMARY_UPSTREAM_ID || "kimi").trim() || "kimi";
 const AI_SUMMARY_MODEL = (process.env.MD_READER_AI_SUMMARY_MODEL || "kimi-for-coding").trim() || "kimi-for-coding";
 const AI_SUMMARY_MAX_CHARS = Math.max(4000, Number(process.env.MD_READER_AI_SUMMARY_MAX_CHARS || 40000));
@@ -438,12 +441,18 @@ async function generateAiSummary(relativePath) {
     throw new Error("MD_READER_AI_SUMMARY_BASE_URL is required.");
   }
 
+  const headers = {
+    "Content-Type": "application/json",
+    "X-Upstream-Id": AI_SUMMARY_UPSTREAM_ID,
+  };
+
+  if (AI_SUMMARY_API_KEY) {
+    headers["x-api-key"] = AI_SUMMARY_API_KEY;
+  }
+
   const response = await fetch(`${AI_SUMMARY_BASE_URL}/v1/messages`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Upstream-Id": AI_SUMMARY_UPSTREAM_ID,
-    },
+    headers,
     body: JSON.stringify({
       model: AI_SUMMARY_MODEL,
       max_tokens: 800,
